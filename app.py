@@ -156,8 +156,58 @@ def parse_hawk(url):
             matches = series_data.get('matches', [])
             
             for m in matches:
-                team1_score += 1 if m.get('isTeam1Winner') == True else 0
-                team2_score += 1 if m.get('isTeam1Winner') == False else 0
+                is_winner = m.get('isTeam1Winner')
+                if is_winner is True:
+                    team1_score += 1
+                elif is_winner is False:
+                    team2_score += 1
+            
+            scoreboard = series_data.get('scoreboard', {})
+            live_match = series_data.get('currentMatch', {})
+            current_map_score = {'radiant': 0, 'dire': 0}
+            
+            if team1_score == 0 and team2_score == 0:
+                team1_score = scoreboard.get('team1Score', 0) or scoreboard.get('team1Wins', 0) or 0
+                team2_score = scoreboard.get('team2Score', 0) or scoreboard.get('team2Wins', 0) or 0
+            
+            if team1_score == 0 and team2_score == 0:
+                team1_score = series_data.get('team1Score', 0) or series_data.get('score', {}).get('team1', 0) or 0
+                team2_score = series_data.get('team2Score', 0) or series_data.get('score', {}).get('team2', 0) or 0
+            
+            if team1_score == 0 and team2_score == 0:
+                html_lower = html.lower()
+                team1_lower = team1_data.get('name', '').lower()
+                team2_lower = team2_data.get('name', '').lower()
+                
+                score_pattern = team1_lower + r'\s*(\d+)\s*-\s*(\d+)\s*' + team2_lower
+                match = re.search(score_pattern, html_lower)
+                if match:
+                    team1_score = int(match.group(1))
+                    team2_score = int(match.group(2))
+                
+                if team1_score == 0 and team2_score == 0:
+                    score_pattern2 = r'(\d+)\s*-\s*(\d+).*?' + re.escape(team1_lower) + r'|' + re.escape(team2_lower)
+                    match2 = re.search(score_pattern2, html_lower)
+                    if match2:
+                        team1_score = int(match2.group(1)) if match2.group(1) else 0
+                        team2_score = int(match2.group(2)) if match2.group(2) else 0
+            
+            if live_match:
+                states = live_match.get('states', [])
+                if states:
+                    current_map_score['radiant'] = states[-1].get('radiantScore', 0) or 0
+                    current_map_score['dire'] = states[-1].get('direScore', 0) or 0
+            
+            if not team1_picks and not team2_picks and live_match:
+                picks = live_match.get('picks', [])
+                for pick in picks:
+                    hero_name = pick.get('hero', {}).get('name', '')
+                    if hero_name:
+                        hero_name = hero_name.replace('npc_dota_hero_', '').replace('_', ' ').title()
+                        if pick.get('isRadiant'):
+                            team1_picks.append(hero_name)
+                        else:
+                            team2_picks.append(hero_name)
             
             if team1_score > 0 or team2_score > 0:
                 completed_maps = team1_score + team2_score
@@ -242,8 +292,10 @@ def parse_hawk(url):
                 "series_status": series_status,
                 "team1_score": team1_score,
                 "team2_score": team2_score,
+                "current_map_score": current_map_score,
                 "best_of": best_of,
-                "current_odds": odds_data if odds_data else None
+                "current_odds": odds_data if odds_data else None,
+                "is_odds_available": bool(odds_data)
             }
         
         return {"teams": [], "tournament": "Unknown", "picks": {"team1": [], "team2": []}, "series_status": "unknown"}
@@ -501,6 +553,9 @@ HTML = '''
                 <div class="score-display">
                     <span class="score-team1">{{ team1_score }}</span> - <span class="score-team2">{{ team2_score }}</span>
                     <span style="color: #888; font-size: 0.9rem;"> (BO{{ best_of }})</span>
+                    {% if current_map_score.radiant or current_map_score.dire %}
+                    <span style="color: #888; font-size: 0.8rem; margin-left: 10px;">| Карта: {{ current_map_score.radiant }} - {{ current_map_score.dire }}</span>
+                    {% endif %}
                 </div>
                 
                 {% if series_status == 'series_finished' %}
@@ -583,11 +638,11 @@ HTML = '''
                 </thead>
                 <tbody id="oddsTable">
                     {% for bookmaker in bookmakers %}
-                    <tr>
+                    <tr class="odds-row-{{ bookmaker }}">
                         <td><strong>{{ bookmaker }}</strong></td>
-                        {% if series_status == 'series_finished' %}
-                        <td><span class="odds-closed">❌ Закрыто</span></td>
-                        <td><span class="odds-closed">❌ Закрыто</span></td>
+                        {% if series_status == 'series_finished' or not is_odds_available %}
+                        <td class="team1-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
+                        <td class="team2-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
                         {% else %}
                         <td class="team1-{{ bookmaker }}">{{ odds.get(bookmaker, {}).get('team1', 'N/A') }}</td>
                         <td class="team2-{{ bookmaker }}">{{ odds.get(bookmaker, {}).get('team2', 'N/A') }}</td>
@@ -634,14 +689,36 @@ HTML = '''
                 const response = await fetch('/api/odds?url=' + encodeURIComponent(url));
                 const data = await response.json();
                 
-                if (data.odds) {
+                if (data.odds || data.team1_score !== undefined) {
                     if (data.series_status !== lastSeriesStatus) {
                         lastSeriesStatus = data.series_status;
                         window.location.reload();
                         return;
                     }
                     
-                    updateOddsTable(data.odds, data.series_status);
+                    if (typeof data.team1_score === 'number') {
+                        let scoreHtml = '<span class="score-team1">' + data.team1_score + '</span> - <span class="score-team2">' + data.team2_score + '</span><span style="color: #888; font-size: 0.9rem;"> (BO' + data.best_of + ')</span>';
+                        if (data.current_map_score && (data.current_map_score.radiant || data.current_map_score.dire)) {
+                            scoreHtml += '<span style="color: #888; font-size: 0.8rem; margin-left: 10px;">| Карта: ' + data.current_map_score.radiant + ' - ' + data.current_map_score.dire + '</span>';
+                        }
+                        const scoreEl = document.querySelector('.score-display');
+                        if (scoreEl) {
+                            scoreEl.innerHTML = scoreHtml;
+                        }
+                        
+                        const statusEl = document.querySelector('.map-status');
+                        if (statusEl) {
+                            if (data.series_status === 'series_finished') {
+                                statusEl.outerHTML = '<span class="map-status status-finished">✅ Серия завершена</span>';
+                            } else if (data.series_status === 'map_in_progress') {
+                                statusEl.outerHTML = '<span class="map-status status-live">🔴 Карта в процессе</span>';
+                            } else {
+                                statusEl.outerHTML = '<span class="map-status status-upcoming">📋 Матч скоро</span>';
+                            }
+                        }
+                    }
+                    
+                    updateOddsTable(data.odds, data.series_status, data.is_odds_available);
                     document.getElementById('updateTime').textContent = '🔄 Обновлено: ' + data.time;
                 }
             } catch (e) {
@@ -649,23 +726,30 @@ HTML = '''
             }
         }
         
-        function updateOddsTable(odds, seriesStatus) {
+        function updateOddsTable(odds, seriesStatus, isOddsAvailable) {
             const bookmakers = ['ggbet', 'parimatch', 'betboom', 'spinbetter', 'pinnacle', 'fonbet', 'ray4bet', 'bet365'];
             
             bookmakers.forEach(bm => {
                 const el1 = document.querySelector('.team1-' + bm);
                 const el2 = document.querySelector('.team2-' + bm);
                 
-                if (seriesStatus === 'series_finished') {
+                if (seriesStatus === 'series_finished' || !isOddsAvailable) {
                     if (el1) {
                         el1.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
                         el2.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
                     }
+                } else if (odds && odds[bm] && odds[bm].team1 && odds[bm].team2) {
+                    if (el1) {
+                        el1.innerHTML = odds[bm].team1;
+                    }
+                    if (el2) {
+                        el2.innerHTML = odds[bm].team2;
+                    }
                 } else {
-                    const t1 = odds[bm]?.team1 || 'N/A';
-                    const t2 = odds[bm]?.team2 || 'N/A';
-                    if (el1) el1.textContent = t1;
-                    if (el2) el2.textContent = t2;
+                    if (el1) {
+                        el1.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
+                        el2.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
+                    }
                 }
             });
         }
@@ -699,6 +783,7 @@ def home():
         tournament=teams_data.get('tournament', ''),
         picks=teams_data.get('picks', {'team1': [], 'team2': []}),
         odds=odds,
+        is_odds_available=teams_data.get('is_odds_available', False),
         bookmakers=BOOKMAKERS,
         team1_advantage=team1_adv,
         team2_advantage=team2_adv,
@@ -707,6 +792,7 @@ def home():
         series_status=teams_data.get('series_status', 'unknown'),
         team1_score=teams_data.get('team1_score', 0),
         team2_score=teams_data.get('team2_score', 0),
+        current_map_score=teams_data.get('current_map_score', {'radiant': 0, 'dire': 0}),
         best_of=teams_data.get('best_of', 3)
     )
 
@@ -729,6 +815,7 @@ def api_odds():
         "tournament": teams_data.get('tournament', ''),
         "picks": teams_data.get('picks', {'team1': [], 'team2': []}),
         "odds": odds,
+        "is_odds_available": teams_data.get('is_odds_available', False),
         "team1_advantage": team1_adv,
         "team2_advantage": team2_adv,
         "team1_stats": t1_stats,
@@ -736,6 +823,7 @@ def api_odds():
         "series_status": teams_data.get('series_status', 'unknown'),
         "team1_score": teams_data.get('team1_score', 0),
         "team2_score": teams_data.get('team2_score', 0),
+        "current_map_score": teams_data.get('current_map_score', {'radiant': 0, 'dire': 0}),
         "best_of": teams_data.get('best_of', 3),
         "time": datetime.now().strftime("%H:%M:%S")
     })
