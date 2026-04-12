@@ -247,6 +247,7 @@ def parse_hawk(url):
                             team2_picks.append(hero_name)
             
             odds_data = {}
+            all_odds = {}
             
             moneylines = series_data.get('moneylines', [])
             if moneylines:
@@ -254,8 +255,12 @@ def parse_hawk(url):
                     provider = ml.get('oddsProviderCodeName', '')
                     t1 = ml.get('team1WinOdds', '')
                     t2 = ml.get('team2WinOdds', '')
+                    market = ml.get('marketType', 'map_winner')
                     
                     if t1 and t2:
+                        provider_key = provider.replace('-', '').replace('_', '')
+                        all_odds[provider] = {'team1': t1, 'team2': t2, 'market': market}
+                        
                         if provider == 'ggbet':
                             odds_data['ggbet'] = {'team1': t1, 'team2': t2}
                         elif provider == 'parimatch':
@@ -264,6 +269,27 @@ def parse_hawk(url):
                             odds_data['betboom'] = {'team1': t1, 'team2': t2}
                         elif provider == 'spin-better':
                             odds_data['spinbetter'] = {'team1': t1, 'team2': t2}
+            
+            map_odds = {}
+            series_odds = {}
+            
+            if moneylines:
+                for ml in moneylines:
+                    provider = ml.get('oddsProviderCodeName', '')
+                    market = ml.get('marketType', 'map_winner')
+                    t1 = ml.get('team1WinOdds', '')
+                    t2 = ml.get('team2WinOdds', '')
+                    
+                    if not t1 or not t2:
+                        continue
+                    
+                    if market in ['map_winner', 'match_winner']:
+                        for bm in ['ggbet', 'parimatch', 'betboom', 'spinbetter']:
+                            if bm in provider.lower() or provider.lower() in bm:
+                                if market == 'match_winner':
+                                    series_odds[bm] = {'team1': t1, 'team2': t2}
+                                else:
+                                    map_odds[bm] = {'team1': t1, 'team2': t2}
             
             if not odds_data:
                 for m in matches:
@@ -299,6 +325,8 @@ def parse_hawk(url):
                 "current_map_score": current_map_score,
                 "best_of": best_of,
                 "current_odds": odds_data if odds_data else None,
+                "map_odds": map_odds if map_odds else odds_data,
+                "series_odds": series_odds,
                 "is_odds_available": bool(odds_data)
             }
         
@@ -636,8 +664,8 @@ HTML = '''
                 <thead>
                     <tr>
                         <th>Букмекер</th>
-                        <th>{{ teams[0] }}</th>
-                        <th>{{ teams[1] }}</th>
+                        <th>{{ teams[0] }} (карта)</th>
+                        <th>{{ teams[1] }} (карта)</th>
                     </tr>
                 </thead>
                 <tbody id="oddsTable">
@@ -648,13 +676,40 @@ HTML = '''
                         <td class="team1-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
                         <td class="team2-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
                         {% else %}
-                        <td class="team1-{{ bookmaker }}">{{ odds.get(bookmaker, {}).get('team1', 'N/A') }}</td>
-                        <td class="team2-{{ bookmaker }}">{{ odds.get(bookmaker, {}).get('team2', 'N/A') }}</td>
+                        <td class="team1-{{ bookmaker }}">{{ map_odds.get(bookmaker, {}).get('team1', odds.get(bookmaker, {}).get('team1', 'N/A')) }}</td>
+                        <td class="team2-{{ bookmaker }}">{{ map_odds.get(bookmaker, {}).get('team2', odds.get(bookmaker, {}).get('team2', 'N/A')) }}</td>
                         {% endif %}
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
+            
+            {% if series_odds %}
+            <h3 style="margin-top: 20px; color: #ff6b35;">🏆 Победа в серии</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Букмекер</th>
+                        <th>{{ teams[0] }}</th>
+                        <th>{{ teams[1] }}</th>
+                    </tr>
+                </thead>
+                <tbody id="seriesOddsTable">
+                    {% for bookmaker in bookmakers %}
+                    <tr class="series-odds-row-{{ bookmaker }}">
+                        <td><strong>{{ bookmaker }}</strong></td>
+                        {% if series_status == 'series_finished' or not series_odds.get(bookmaker) %}
+                        <td class="team1-series-{{ bookmaker }}"><span class="odds-closed">-</span></td>
+                        <td class="team2-series-{{ bookmaker }}"><span class="odds-closed">-</span></td>
+                        {% else %}
+                        <td class="team1-series-{{ bookmaker }}">{{ series_odds.get(bookmaker, {}).get('team1', '-') }}</td>
+                        <td class="team2-series-{{ bookmaker }}">{{ series_odds.get(bookmaker, {}).get('team2', '-') }}</td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
             
             <p class="update-time">🔄 <span id="updateTime">Обновлено</span></p>
             {% else %}
@@ -722,7 +777,8 @@ HTML = '''
                         }
                     }
                     
-                    updateOddsTable(data.odds, data.series_status, data.is_odds_available);
+                    updateOddsTable(data.map_odds || data.odds, data.series_status, data.is_odds_available);
+                    updateSeriesOddsTable(data.series_odds, data.series_status);
                     document.getElementById('updateTime').textContent = '🔄 Обновлено: ' + data.time;
                 }
             } catch (e) {
@@ -758,6 +814,29 @@ HTML = '''
             });
         }
         
+        function updateSeriesOddsTable(seriesOdds, seriesStatus) {
+            const bookmakers = ['ggbet', 'parimatch', 'betboom', 'spinbetter', 'pinnacle', 'fonbet', 'ray4bet', 'bet365'];
+            
+            bookmakers.forEach(bm => {
+                const el1 = document.querySelector('.team1-series-' + bm);
+                const el2 = document.querySelector('.team2-series-' + bm);
+                
+                if (seriesStatus === 'series_finished') {
+                    if (el1) {
+                        el1.innerHTML = '-';
+                        el2.innerHTML = '-';
+                    }
+                } else if (seriesOdds && seriesOdds[bm] && seriesOdds[bm].team1 && seriesOdds[bm].team2) {
+                    if (el1) {
+                        el1.innerHTML = seriesOdds[bm].team1;
+                    }
+                    if (el2) {
+                        el2.innerHTML = seriesOdds[bm].team2;
+                    }
+                }
+            });
+        }
+        
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('url')) {
             document.getElementById('matchUrl').value = urlParams.get('url');
@@ -787,6 +866,8 @@ def home():
         tournament=teams_data.get('tournament', ''),
         picks=teams_data.get('picks', {'team1': [], 'team2': []}),
         odds=odds,
+        map_odds=teams_data.get('map_odds', {}),
+        series_odds=teams_data.get('series_odds', {}),
         is_odds_available=teams_data.get('is_odds_available', False),
         bookmakers=BOOKMAKERS,
         team1_advantage=team1_adv,
@@ -819,6 +900,8 @@ def api_odds():
         "tournament": teams_data.get('tournament', ''),
         "picks": teams_data.get('picks', {'team1': [], 'team2': []}),
         "odds": odds,
+        "map_odds": teams_data.get('map_odds', {}),
+        "series_odds": teams_data.get('series_odds', {}),
         "is_odds_available": teams_data.get('is_odds_available', False),
         "team1_advantage": team1_adv,
         "team2_advantage": team2_adv,
