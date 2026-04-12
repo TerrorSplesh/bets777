@@ -179,18 +179,22 @@ def parse_hawk(url):
                 team1_lower = team1_data.get('name', '').lower()
                 team2_lower = team2_data.get('name', '').lower()
                 
-                score_pattern = team1_lower + r'\s*(\d+)\s*-\s*(\d+)\s*' + team2_lower
+                score_pattern = r'>(\d+)\s*-\s*(\d+)<'
                 match = re.search(score_pattern, html_lower)
                 if match:
-                    team1_score = int(match.group(1))
-                    team2_score = int(match.group(2))
+                    s1 = int(match.group(1))
+                    s2 = int(match.group(2))
+                    if s1 <= 3 and s2 <= 3:
+                        team1_score = s1
+                        team2_score = s2
                 
                 if team1_score == 0 and team2_score == 0:
-                    score_pattern2 = r'(\d+)\s*-\s*(\d+).*?' + re.escape(team1_lower) + r'|' + re.escape(team2_lower)
+                    score_pattern2 = r'best\s*of\s*\d+.*?(\d+)\s*[-–]\s*(\d+)|(\d+)\s*[-–]\s*(\d+).*?' + re.escape(team1_lower)
                     match2 = re.search(score_pattern2, html_lower)
                     if match2:
-                        team1_score = int(match2.group(1)) if match2.group(1) else 0
-                        team2_score = int(match2.group(2)) if match2.group(2) else 0
+                        g = match2.groups()
+                        team1_score = int(g[0] or g[2] or 0)
+                        team2_score = int(g[1] or g[3] or 0)
             
             if live_match:
                 states = live_match.get('states', [])
