@@ -134,7 +134,7 @@ def parse_hawk(url):
         
         match = re.search(r'data-page="({.*?})"', html)
         if not match:
-            return {"teams": [], "tournament": "Unknown", "picks": {"team1": [], "team2": []}, "map_state": "unknown"}
+            return {"teams": [], "tournament": "Unknown", "picks": {"team1": [], "team2": []}, "series_status": "unknown"}
         
         json_str = match.group(1).replace('&quot;', '"')
         page_data = json.loads(json_str)
@@ -142,35 +142,46 @@ def parse_hawk(url):
         
         team1_picks = []
         team2_picks = []
-        map_state = "upcoming"
+        series_status = "unknown"
+        current_map_odds = None
         
         if series_data:
             team1_data = series_data.get('team1', {})
             team2_data = series_data.get('team2', {})
             championship = series_data.get('championship', {})
+            best_of = series_data.get('bestOf', 3)
             
+            team1_score = 0
+            team2_score = 0
             matches = series_data.get('matches', [])
+            
+            for m in matches:
+                team1_score += 1 if m.get('isTeam1Winner') == True else 0
+                team2_score += 1 if m.get('isTeam1Winner') == False else 0
+            
+            if team1_score > 0 or team2_score > 0:
+                completed_maps = team1_score + team2_score
+                if completed_maps >= best_of:
+                    series_status = "series_finished"
+                elif team1_score >= (best_of // 2 + 1) or team2_score >= (best_of // 2 + 1):
+                    series_status = "series_finished"
+                else:
+                    series_status = "map_in_progress"
+            else:
+                series_status = "no_maps_played"
+            
             if matches:
-                first_match = matches[0]
+                first_match = matches[-1]
                 picks = first_match.get('picks', [])
                 
                 states = first_match.get('states', [])
-                
                 if states:
                     game_time = states[-1].get('gameTime', 0) if states else 0
                     radiant_score = states[-1].get('radiantScore', 0) if states else 0
                     dire_score = states[-1].get('direScore', 0) if states else 0
                     
-                    if game_time > 0 and radiant_score == 0 and dire_score == 0 and game_time < 100:
-                        map_state = "live"
-                    elif radiant_score > 0 or dire_score > 0:
-                        map_state = "finished"
-                    elif game_time < 0:
-                        map_state = "upcoming"
-                    else:
-                        map_state = "live"
-                else:
-                    map_state = "upcoming"
+                    if game_time > 0:
+                        series_status = "map_in_progress"
                 
                 for pick in picks:
                     hero_name = pick.get('hero', {}).get('name', '')
@@ -181,17 +192,64 @@ def parse_hawk(url):
                         else:
                             team2_picks.append(hero_name)
             
+            odds_data = {}
+            
+            moneylines = series_data.get('moneylines', [])
+            if moneylines:
+                for ml in moneylines:
+                    provider = ml.get('oddsProviderCodeName', '')
+                    t1 = ml.get('team1WinOdds', '')
+                    t2 = ml.get('team2WinOdds', '')
+                    
+                    if t1 and t2:
+                        if provider == 'ggbet':
+                            odds_data['ggbet'] = {'team1': t1, 'team2': t2}
+                        elif provider == 'parimatch':
+                            odds_data['parimatch'] = {'team1': t1, 'team2': t2}
+                        elif provider == 'betboom':
+                            odds_data['betboom'] = {'team1': t1, 'team2': t2}
+                        elif provider == 'spin-better':
+                            odds_data['spinbetter'] = {'team1': t1, 'team2': t2}
+            
+            if not odds_data:
+                for m in matches:
+                    odds_bundles = m.get('oddsBundles', [])
+                    
+                    for bundle in odds_bundles:
+                        provider = bundle.get('oddsProviderCodeName', '')
+                        is_team1_first = bundle.get('isTeam1First', True)
+                        odds_list = bundle.get('odds', [])
+                        
+                        for odd_item in reversed(odds_list):
+                            t1_raw = odd_item.get('firstTeamWin')
+                            t2_raw = odd_item.get('secondTeamWin')
+                            
+                            if t1_raw and t2_raw:
+                                if provider == 'ggbet':
+                                    odds_data['ggbet'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
+                                elif provider == 'parimatch':
+                                    odds_data['parimatch'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
+                                elif provider == 'betboom':
+                                    odds_data['betboom'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
+                                elif provider == 'spin-better':
+                                    odds_data['spinbetter'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
+                                break
+            
             return {
                 "teams": [team1_data.get('name', ''), team2_data.get('name', '')],
                 "tournament": championship.get('name', 'Unknown'),
                 "picks": {"team1": team1_picks, "team2": team2_picks},
-                "map_state": map_state
+                "series_status": series_status,
+                "team1_score": team1_score,
+                "team2_score": team2_score,
+                "best_of": best_of,
+                "current_odds": odds_data if odds_data else None
             }
         
-        return {"teams": [], "tournament": "Unknown", "picks": {"team1": [], "team2": []}, "map_state": "unknown"}
+        return {"teams": [], "tournament": "Unknown", "picks": {"team1": [], "team2": []}, "series_status": "unknown"}
     except Exception as e:
         print(f"Parse error: {e}")
-        return {"teams": [], "tournament": "Error", "picks": {"team1": [], "team2": []}, "map_state": "unknown"}
+        return {"teams": [], "tournament": "Error", "picks": {"team1": [], "team2": []}, "series_status": "unknown"}
 
 def calculate_team_stats(picks):
     if not picks:
@@ -242,77 +300,6 @@ def calculate_advantage(team1_picks, team2_picks):
     team2_adv = 100 - team1_adv
     
     return team1_adv, team2_adv, t1_stats, t2_stats
-
-def get_odds(match_url):
-    try:
-        response = requests.get(match_url, headers=HEADERS, timeout=10)
-        html = response.text
-        
-        match = re.search(r'data-page="({.*?})"', html)
-        if not match:
-            return {}
-        
-        json_str = match.group(1).replace('&quot;', '"')
-        page_data = json.loads(json_str)
-        series_data = page_data.get('props', {}).get('seriesPageData', {})
-        
-        if not series_data:
-            return {}
-        
-        all_odds = {}
-        
-        moneylines = series_data.get('moneylines', [])
-        if moneylines:
-            for ml in moneylines:
-                provider = ml.get('oddsProviderCodeName', '')
-                t1 = ml.get('team1WinOdds', '')
-                t2 = ml.get('team2WinOdds', '')
-                
-                if t1 and t2:
-                    if provider == 'ggbet':
-                        all_odds['ggbet'] = {'team1': t1, 'team2': t2}
-                    elif provider == 'parimatch':
-                        all_odds['parimatch'] = {'team1': t1, 'team2': t2}
-                    elif provider == 'betboom':
-                        all_odds['betboom'] = {'team1': t1, 'team2': t2}
-                    elif provider == 'spin-better':
-                        all_odds['spinbetter'] = {'team1': t1, 'team2': t2}
-        
-        if not all_odds:
-            matches = series_data.get('matches', [])
-            for match in matches:
-                odds_bundles = match.get('oddsBundles', [])
-                
-                for bundle in odds_bundles:
-                    provider = bundle.get('oddsProviderCodeName', '')
-                    is_team1_first = bundle.get('isTeam1First', True)
-                    odds_list = bundle.get('odds', [])
-                    
-                    valid_odds = None
-                    for odd_item in reversed(odds_list):
-                        t1_raw = odd_item.get('firstTeamWin')
-                        t2_raw = odd_item.get('secondTeamWin')
-                        
-                        if t1_raw and t2_raw:
-                            valid_odds = {
-                                'team1': t1_raw if is_team1_first else t2_raw,
-                                'team2': t2_raw if is_team1_first else t1_raw
-                            }
-                            break
-                    
-                    if valid_odds:
-                        if provider == 'ggbet':
-                            all_odds['ggbet'] = valid_odds
-                        elif provider == 'parimatch':
-                            all_odds['parimatch'] = valid_odds
-                        elif provider == 'betboom':
-                            all_odds['betboom'] = valid_odds
-                        elif provider == 'spin-better':
-                            all_odds['spinbetter'] = valid_odds
-        
-        return all_odds
-    except:
-        return {}
 
 HTML = '''
 <!DOCTYPE html>
@@ -368,6 +355,13 @@ HTML = '''
         }
         .vs { color: #ff6b35; }
         .tournament { color: #888; font-size: 0.9rem; }
+        .score-display {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .score-team1 { color: #ff6b35; }
+        .score-team2 { color: #6366f1; }
         .map-status {
             display: inline-block;
             padding: 5px 15px;
@@ -503,13 +497,20 @@ HTML = '''
             <div class="match-info">
                 <h2>{{ teams[0] }} <span class="vs">VS</span> {{ teams[1] }}</h2>
                 <p class="tournament">🏆 {{ tournament }}</p>
-                {% if map_state == 'upcoming' %}
-                <span class="map-status status-upcoming">📋 Матч скоро</span>
-                {% elif map_state == 'live' %}
-                <span class="map-status status-live">🔴 LIVE</span>
+                
+                <div class="score-display">
+                    <span class="score-team1">{{ team1_score }}</span> - <span class="score-team2">{{ team2_score }}</span>
+                    <span style="color: #888; font-size: 0.9rem;"> (BO{{ best_of }})</span>
+                </div>
+                
+                {% if series_status == 'series_finished' %}
+                <span class="map-status status-finished">✅ Серия завершена</span>
+                {% elif series_status == 'map_in_progress' %}
+                <span class="map-status status-live">🔴 Карта в процессе</span>
                 {% else %}
-                <span class="map-status status-finished">✅ Матч завершён</span>
+                <span class="map-status status-upcoming">📋 Матч скоро</span>
                 {% endif %}
+                
                 {% if picks.team1 or picks.team2 %}
                 <div class="picks-info">
                     <p><strong>{{ teams[0] }}:</strong> {% for hero in picks.team1 %}<span class="pick-hero">{{ hero }}</span>{% endfor %}</p>
@@ -518,7 +519,7 @@ HTML = '''
                 {% endif %}
             </div>
             
-            {% if map_state != 'finished' and (team1_advantage > 0 or team2_advantage > 0) %}
+            {% if series_status != 'series_finished' and (team1_advantage > 0 or team2_advantage > 0) %}
             <div class="method-info">
                 📊 Метод: Pub Winrate (40%) + Pro Winrate (20%) + Pro Strength (40%)
             </div>
@@ -584,7 +585,7 @@ HTML = '''
                     {% for bookmaker in bookmakers %}
                     <tr>
                         <td><strong>{{ bookmaker }}</strong></td>
-                        {% if map_state == 'finished' %}
+                        {% if series_status == 'series_finished' %}
                         <td><span class="odds-closed">❌ Закрыто</span></td>
                         <td><span class="odds-closed">❌ Закрыто</span></td>
                         {% else %}
@@ -606,7 +607,7 @@ HTML = '''
     <script>
         let url = document.getElementById('matchUrl').value;
         let interval;
-        let lastMapState = "{{ map_state }}";
+        let lastSeriesStatus = "{{ series_status }}";
         
         if (url) {
             startAutoRefresh();
@@ -634,13 +635,13 @@ HTML = '''
                 const data = await response.json();
                 
                 if (data.odds) {
-                    if (data.map_state !== lastMapState) {
-                        lastMapState = data.map_state;
+                    if (data.series_status !== lastSeriesStatus) {
+                        lastSeriesStatus = data.series_status;
                         window.location.reload();
                         return;
                     }
                     
-                    updateOddsTable(data.odds, data.map_state);
+                    updateOddsTable(data.odds, data.series_status);
                     document.getElementById('updateTime').textContent = '🔄 Обновлено: ' + data.time;
                 }
             } catch (e) {
@@ -648,14 +649,14 @@ HTML = '''
             }
         }
         
-        function updateOddsTable(odds, mapState) {
+        function updateOddsTable(odds, seriesStatus) {
             const bookmakers = ['ggbet', 'parimatch', 'betboom', 'spinbetter', 'pinnacle', 'fonbet', 'ray4bet', 'bet365'];
             
             bookmakers.forEach(bm => {
                 const el1 = document.querySelector('.team1-' + bm);
                 const el2 = document.querySelector('.team2-' + bm);
                 
-                if (mapState === 'finished') {
+                if (seriesStatus === 'series_finished') {
                     if (el1) {
                         el1.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
                         el2.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
@@ -683,8 +684,9 @@ BOOKMAKERS = ["ggbet", "parimatch", "betboom", "spinbetter", "pinnacle", "fonbet
 @app.route('/')
 def home():
     match_url = request.args.get('url', '')
-    teams_data = parse_hawk(match_url) if match_url else {"teams": [], "tournament": "", "picks": {"team1": [], "team2": []}, "map_state": "unknown"}
-    odds = get_odds(match_url) if match_url else {}
+    teams_data = parse_hawk(match_url) if match_url else {"teams": [], "tournament": "", "picks": {"team1": [], "team2": []}, "series_status": "unknown", "team1_score": 0, "team2_score": 0, "best_of": 3, "current_odds": None}
+    
+    odds = teams_data.get('current_odds', {}) if match_url else {}
     
     team1_adv, team2_adv, t1_stats, t2_stats = calculate_advantage(
         teams_data.get('picks', {}).get('team1', []),
@@ -702,7 +704,10 @@ def home():
         team2_advantage=team2_adv,
         team1_stats=t1_stats,
         team2_stats=t2_stats,
-        map_state=teams_data.get('map_state', 'unknown')
+        series_status=teams_data.get('series_status', 'unknown'),
+        team1_score=teams_data.get('team1_score', 0),
+        team2_score=teams_data.get('team2_score', 0),
+        best_of=teams_data.get('best_of', 3)
     )
 
 @app.route('/api/odds')
@@ -712,7 +717,7 @@ def api_odds():
         return jsonify({"error": "No URL"})
     
     teams_data = parse_hawk(match_url)
-    odds = get_odds(match_url)
+    odds = teams_data.get('current_odds', {})
     
     team1_adv, team2_adv, t1_stats, t2_stats = calculate_advantage(
         teams_data.get('picks', {}).get('team1', []),
@@ -728,7 +733,10 @@ def api_odds():
         "team2_advantage": team2_adv,
         "team1_stats": t1_stats,
         "team2_stats": t2_stats,
-        "map_state": teams_data.get('map_state', 'unknown'),
+        "series_status": teams_data.get('series_status', 'unknown'),
+        "team1_score": teams_data.get('team1_score', 0),
+        "team2_score": teams_data.get('team2_score', 0),
+        "best_of": teams_data.get('best_of', 3),
         "time": datetime.now().strftime("%H:%M:%S")
     })
 
