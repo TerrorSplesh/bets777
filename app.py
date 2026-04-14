@@ -271,14 +271,17 @@ def parse_hawk(url):
                     elif 'spinbetter' in provider_norm or 'spin' in provider_norm:
                         bm_key = 'spinbetter'
                     
-                    if t1 and t2:
-                        all_odds[provider] = {'team1': t1, 'team2': t2, 'market': market}
+                    if bm_key:
                         available_bookmakers.add(bm_key)
-                        
-                        if bm_key:
-                            odds_data[bm_key] = {'team1': t1, 'team2': t2}
                     
                     is_suspended = ml.get('isSuspended', False) or ml.get('isPaused', False)
+                    
+                    if t1 and t2 and t1 != '' and t2 != '':
+                        all_odds[provider] = {'team1': t1, 'team2': t2, 'market': market}
+                        
+                        if bm_key and not is_suspended:
+                            odds_data[bm_key] = {'team1': t1, 'team2': t2}
+                    
                     if bm_key and is_suspended:
                         odds_paused[bm_key] = True
             
@@ -294,7 +297,7 @@ def parse_hawk(url):
                     
                     is_suspended = ml.get('isSuspended', False) or ml.get('isPaused', False)
                     
-                    if not t1 or not t2 or is_suspended:
+                    if not t1 or not t2 or t1 == '' or t2 == '' or is_suspended:
                         continue
                     
                     if market in ['map_winner', 'match_winner']:
@@ -315,11 +318,25 @@ def parse_hawk(url):
                         is_team1_first = bundle.get('isTeam1First', True)
                         odds_list = bundle.get('odds', [])
                         
+                        provider_norm = provider.lower().replace('-', '').replace('_', '').replace(' ', '')
+                        bm_key = None
+                        if 'ggbet' in provider_norm:
+                            bm_key = 'ggbet'
+                        elif 'parimatch' in provider_norm or 'parimatch' in provider.lower():
+                            bm_key = 'parimatch'
+                        elif 'betboom' in provider_norm:
+                            bm_key = 'betboom'
+                        elif 'spinbetter' in provider_norm or 'spin' in provider_norm:
+                            bm_key = 'spinbetter'
+                        
+                        if bm_key:
+                            available_bookmakers.add(bm_key)
+                        
                         for odd_item in reversed(odds_list):
                             t1_raw = odd_item.get('firstTeamWin')
                             t2_raw = odd_item.get('secondTeamWin')
                             
-                            if t1_raw and t2_raw:
+                            if t1_raw is not None and t2_raw is not None and t1_raw != '' and t2_raw != '':
                                 provider_norm = provider.lower().replace('-', '').replace('_', '').replace(' ', '')
                                 if 'ggbet' in provider_norm:
                                     odds_data['ggbet'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
