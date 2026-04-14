@@ -248,6 +248,8 @@ def parse_hawk(url):
             
             odds_data = {}
             all_odds = {}
+            available_bookmakers = set()
+            odds_paused = {}
             
             moneylines = series_data.get('moneylines', [])
             if moneylines:
@@ -257,23 +259,31 @@ def parse_hawk(url):
                     t2 = ml.get('team2WinOdds', '')
                     market = ml.get('marketType', 'map_winner')
                     
+                    provider_norm = provider.lower().replace('-', '').replace('_', '').replace(' ', '')
+                    
+                    bm_key = None
+                    if 'ggbet' in provider_norm:
+                        bm_key = 'ggbet'
+                    elif 'parimatch' in provider_norm or 'parimatch' in provider.lower():
+                        bm_key = 'parimatch'
+                    elif 'betboom' in provider_norm:
+                        bm_key = 'betboom'
+                    elif 'spinbetter' in provider_norm or 'spin' in provider_norm:
+                        bm_key = 'spinbetter'
+                    
                     if t1 and t2:
-                        provider_norm = provider.lower().replace('-', '').replace('_', '').replace(' ', '')
-                        
                         all_odds[provider] = {'team1': t1, 'team2': t2, 'market': market}
+                        available_bookmakers.add(bm_key)
                         
-                        if 'ggbet' in provider_norm:
-                            odds_data['ggbet'] = {'team1': t1, 'team2': t2}
-                        elif 'parimatch' in provider_norm or 'parimatch' in provider:
-                            odds_data['parimatch'] = {'team1': t1, 'team2': t2}
-                        elif 'betboom' in provider_norm:
-                            odds_data['betboom'] = {'team1': t1, 'team2': t2}
-                        elif 'spinbetter' in provider_norm or 'spin' in provider_norm:
-                            odds_data['spinbetter'] = {'team1': t1, 'team2': t2}
+                        if bm_key:
+                            odds_data[bm_key] = {'team1': t1, 'team2': t2}
+                    
+                    is_suspended = ml.get('isSuspended', False) or ml.get('isPaused', False)
+                    if bm_key and is_suspended:
+                        odds_paused[bm_key] = True
             
             map_odds = {}
             series_odds = {}
-            odds_paused = {}
             
             if moneylines:
                 for ml in moneylines:
@@ -285,8 +295,6 @@ def parse_hawk(url):
                     is_suspended = ml.get('isSuspended', False) or ml.get('isPaused', False)
                     
                     if not t1 or not t2 or is_suspended:
-                        bm_key = provider.replace('-', '').replace('_', '').replace(' ', '')
-                        odds_paused[bm_key] = True
                         continue
                     
                     if market in ['map_winner', 'match_winner']:
@@ -336,6 +344,7 @@ def parse_hawk(url):
                 "map_odds": map_odds if map_odds else odds_data,
                 "series_odds": series_odds,
                 "odds_paused": odds_paused,
+                "available_bookmakers": list(available_bookmakers),
                 "is_odds_available": bool(odds_data)
             }
         
@@ -691,10 +700,13 @@ HTML = '''
                         {% if series_status == 'series_finished' %}
                         <td class="team1-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
                         <td class="team2-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
-                        {% elif not is_odds_available or not map_odds.get(bookmaker) and not odds.get(bookmaker) %}
+                        {% elif bookmaker in available_bookmakers and not map_odds.get(bookmaker) and not odds.get(bookmaker) %}
                         <td class="team1-{{ bookmaker }}"><span class="odds-paused">⏸️ Пауза</span></td>
                         <td class="team2-{{ bookmaker }}"><span class="odds-paused">⏸️ Пауза</span></td>
-                        {% elif odds_paused.get(bookmaker) or odds_paused.get(bookmaker.replace('-', '').replace(' ', '')) %}
+                        {% elif bookmaker not in available_bookmakers %}
+                        <td class="team1-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
+                        <td class="team2-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
+                        {% elif odds_paused.get(bookmaker) %}
                         <td class="team1-{{ bookmaker }}"><span class="odds-paused">⏸️ Пауза</span></td>
                         <td class="team2-{{ bookmaker }}"><span class="odds-paused">⏸️ Пауза</span></td>
                         {% else %}
@@ -799,7 +811,7 @@ HTML = '''
                         }
                     }
                     
-                    updateOddsTable(data.map_odds || data.odds, data.series_status, data.is_odds_available, data.odds_paused || {});
+                    updateOddsTable(data.map_odds || data.odds, data.series_status, data.is_odds_available, data.odds_paused || {}, data.available_bookmakers || []);
                     updateSeriesOddsTable(data.series_odds, data.series_status);
                     document.getElementById('updateTime').textContent = '🔄 Обновлено: ' + data.time;
                 }
@@ -808,7 +820,7 @@ HTML = '''
             }
         }
         
-        function updateOddsTable(odds, seriesStatus, isOddsAvailable, oddsPaused = {}) {
+        function updateOddsTable(odds, seriesStatus, isOddsAvailable, oddsPaused = {}, availableBookmakers = []) {
             const bookmakers = ['ggbet', 'parimatch', 'betboom', 'spinbetter', 'pinnacle', 'fonbet', 'ray4bet', 'bet365'];
             
             bookmakers.forEach(bm => {
@@ -816,16 +828,22 @@ HTML = '''
                 const el2 = document.querySelector('.team2-' + bm);
                 const isPaused = oddsPaused[bm] || oddsPaused[bm.replace(/-/g, '').replace(/ /g, '')];
                 const hasOdds = odds && odds[bm] && odds[bm].team1 && odds[bm].team2;
+                const isAvailable = availableBookmakers.includes(bm);
                 
                 if (seriesStatus === 'series_finished') {
                     if (el1) {
                         el1.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
                         el2.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
                     }
-                } else if (!isOddsAvailable || !hasOdds) {
+                } else if (isAvailable && !hasOdds) {
                     if (el1) {
                         el1.innerHTML = '<span class="odds-paused">⏸️ Пауза</span>';
                         el2.innerHTML = '<span class="odds-paused">⏸️ Пауза</span>';
+                    }
+                } else if (!isAvailable) {
+                    if (el1) {
+                        el1.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
+                        el2.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
                     }
                 } else if (isPaused) {
                     if (el1) {
@@ -898,6 +916,7 @@ def home():
         map_odds=teams_data.get('map_odds', {}),
         series_odds=teams_data.get('series_odds', {}),
         odds_paused=teams_data.get('odds_paused', {}),
+        available_bookmakers=teams_data.get('available_bookmakers', []),
         is_odds_available=teams_data.get('is_odds_available', False),
         bookmakers=BOOKMAKERS,
         team1_advantage=team1_adv,
@@ -933,6 +952,7 @@ def api_odds():
         "map_odds": teams_data.get('map_odds', {}),
         "series_odds": teams_data.get('series_odds', {}),
         "odds_paused": teams_data.get('odds_paused', {}),
+        "available_bookmakers": teams_data.get('available_bookmakers', []),
         "is_odds_available": teams_data.get('is_odds_available', False),
         "team1_advantage": team1_adv,
         "team2_advantage": team2_adv,
