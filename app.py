@@ -258,16 +258,17 @@ def parse_hawk(url):
                     market = ml.get('marketType', 'map_winner')
                     
                     if t1 and t2:
-                        provider_key = provider.replace('-', '').replace('_', '')
+                        provider_norm = provider.lower().replace('-', '').replace('_', '').replace(' ', '')
+                        
                         all_odds[provider] = {'team1': t1, 'team2': t2, 'market': market}
                         
-                        if provider == 'ggbet':
+                        if 'ggbet' in provider_norm:
                             odds_data['ggbet'] = {'team1': t1, 'team2': t2}
-                        elif provider == 'parimatch':
+                        elif 'parimatch' in provider_norm or 'parimatch' in provider:
                             odds_data['parimatch'] = {'team1': t1, 'team2': t2}
-                        elif provider == 'betboom':
+                        elif 'betboom' in provider_norm:
                             odds_data['betboom'] = {'team1': t1, 'team2': t2}
-                        elif provider == 'spin-better':
+                        elif 'spinbetter' in provider_norm or 'spin' in provider_norm:
                             odds_data['spinbetter'] = {'team1': t1, 'team2': t2}
             
             map_odds = {}
@@ -289,8 +290,9 @@ def parse_hawk(url):
                         continue
                     
                     if market in ['map_winner', 'match_winner']:
+                        provider_norm = provider.lower().replace('-', '').replace('_', '').replace(' ', '')
                         for bm in ['ggbet', 'parimatch', 'betboom', 'spinbetter']:
-                            if bm in provider.lower() or provider.lower() in bm:
+                            if bm in provider_norm or (bm == 'parimatch' and 'parimatch' in provider.lower()) or (bm == 'spinbetter' and 'spin' in provider_norm):
                                 if market == 'match_winner':
                                     series_odds[bm] = {'team1': t1, 'team2': t2}
                                 else:
@@ -310,13 +312,14 @@ def parse_hawk(url):
                             t2_raw = odd_item.get('secondTeamWin')
                             
                             if t1_raw and t2_raw:
-                                if provider == 'ggbet':
+                                provider_norm = provider.lower().replace('-', '').replace('_', '').replace(' ', '')
+                                if 'ggbet' in provider_norm:
                                     odds_data['ggbet'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
-                                elif provider == 'parimatch':
+                                elif 'parimatch' in provider_norm or 'parimatch' in provider.lower():
                                     odds_data['parimatch'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
-                                elif provider == 'betboom':
+                                elif 'betboom' in provider_norm:
                                     odds_data['betboom'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
-                                elif provider == 'spin-better':
+                                elif 'spinbetter' in provider_norm or 'spin' in provider_norm:
                                     odds_data['spinbetter'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
                                 break
             
