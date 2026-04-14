@@ -691,9 +691,9 @@ HTML = '''
                         {% if series_status == 'series_finished' %}
                         <td class="team1-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
                         <td class="team2-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
-                        {% elif not is_odds_available %}
-                        <td class="team1-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
-                        <td class="team2-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
+                        {% elif not is_odds_available or not map_odds.get(bookmaker) and not odds.get(bookmaker) %}
+                        <td class="team1-{{ bookmaker }}"><span class="odds-paused">⏸️ Пауза</span></td>
+                        <td class="team2-{{ bookmaker }}"><span class="odds-paused">⏸️ Пауза</span></td>
                         {% elif odds_paused.get(bookmaker) or odds_paused.get(bookmaker.replace('-', '').replace(' ', '')) %}
                         <td class="team1-{{ bookmaker }}"><span class="odds-paused">⏸️ Пауза</span></td>
                         <td class="team2-{{ bookmaker }}"><span class="odds-paused">⏸️ Пауза</span></td>
@@ -815,28 +815,29 @@ HTML = '''
                 const el1 = document.querySelector('.team1-' + bm);
                 const el2 = document.querySelector('.team2-' + bm);
                 const isPaused = oddsPaused[bm] || oddsPaused[bm.replace(/-/g, '').replace(/ /g, '')];
+                const hasOdds = odds && odds[bm] && odds[bm].team1 && odds[bm].team2;
                 
-                if (seriesStatus === 'series_finished' || !isOddsAvailable) {
+                if (seriesStatus === 'series_finished') {
                     if (el1) {
                         el1.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
                         el2.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
+                    }
+                } else if (!isOddsAvailable || !hasOdds) {
+                    if (el1) {
+                        el1.innerHTML = '<span class="odds-paused">⏸️ Пауза</span>';
+                        el2.innerHTML = '<span class="odds-paused">⏸️ Пауза</span>';
                     }
                 } else if (isPaused) {
                     if (el1) {
                         el1.innerHTML = '<span class="odds-paused">⏸️ Пауза</span>';
                         el2.innerHTML = '<span class="odds-paused">⏸️ Пауза</span>';
                     }
-                } else if (odds && odds[bm] && odds[bm].team1 && odds[bm].team2) {
+                } else {
                     if (el1) {
                         el1.innerHTML = odds[bm].team1;
                     }
                     if (el2) {
                         el2.innerHTML = odds[bm].team2;
-                    }
-                } else {
-                    if (el1) {
-                        el1.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
-                        el2.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
                     }
                 }
             });
