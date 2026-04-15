@@ -332,6 +332,7 @@ def parse_hawk(url):
                         if bm_key:
                             available_bookmakers.add(bm_key)
                         
+                        found_odds = False
                         for odd_item in reversed(odds_list):
                             t1_raw = odd_item.get('firstTeamWin')
                             t2_raw = odd_item.get('secondTeamWin')
@@ -346,7 +347,11 @@ def parse_hawk(url):
                                     odds_data['betboom'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
                                 elif 'spinbetter' in provider_norm or 'spin' in provider_norm:
                                     odds_data['spinbetter'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
+                                found_odds = True
                                 break
+                        
+                        if bm_key and not found_odds:
+                            odds_paused[bm_key] = True
             
             return {
                 "teams": [team1_data.get('name', ''), team2_data.get('name', '')],
