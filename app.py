@@ -229,10 +229,20 @@ def parse_hawk(url):
                 picks = first_match.get('picks', [])
                 
                 states = first_match.get('states', [])
+                live_stats = {}
                 if states:
-                    game_time = states[-1].get('gameTime', 0) if states else 0
-                    radiant_score = states[-1].get('radiantScore', 0) if states else 0
-                    dire_score = states[-1].get('direScore', 0) if states else 0
+                    last_state = states[-1]
+                    game_time = last_state.get('gameTime', 0)
+                    radiant_score = last_state.get('radiantScore', 0)
+                    dire_score = last_state.get('direScore', 0)
+                    net_worth_adv = last_state.get('radiantNetWorthAdvantage', 0)
+                    
+                    live_stats = {
+                        'game_time': game_time,
+                        'radiant_kills': radiant_score,
+                        'dire_kills': dire_score,
+                        'net_worth_adv': net_worth_adv
+                    }
                     
                     if game_time > 0:
                         series_status = "map_in_progress"
@@ -340,13 +350,13 @@ def parse_hawk(url):
                             if t1_raw is not None and t2_raw is not None and t1_raw != '' and t2_raw != '':
                                 provider_norm = provider.lower().replace('-', '').replace('_', '').replace(' ', '')
                                 if 'ggbet' in provider_norm:
-                                    odds_data['ggbet'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
+                                    odds_data['ggbet'] = {'team1': t2_raw, 'team2': t1_raw}
                                 elif 'parimatch' in provider_norm or 'parimatch' in provider.lower():
-                                    odds_data['parimatch'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
+                                    odds_data['parimatch'] = {'team1': t2_raw, 'team2': t1_raw}
                                 elif 'betboom' in provider_norm:
-                                    odds_data['betboom'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
+                                    odds_data['betboom'] = {'team1': t2_raw, 'team2': t1_raw}
                                 elif 'spinbetter' in provider_norm or 'spin' in provider_norm:
-                                    odds_data['spinbetter'] = {'team1': t1_raw if is_team1_first else t2_raw, 'team2': t2_raw if is_team1_first else t1_raw}
+                                    odds_data['spinbetter'] = {'team1': t2_raw, 'team2': t1_raw}
                                 found_odds = True
                                 break
                         
@@ -367,7 +377,8 @@ def parse_hawk(url):
                 "series_odds": series_odds,
                 "odds_paused": odds_paused,
                 "available_bookmakers": list(available_bookmakers),
-                "is_odds_available": bool(odds_data)
+                "is_odds_available": bool(odds_data),
+                "live_stats": live_stats
             }
         
         return {"teams": [], "tournament": "Unknown", "picks": {"team1": [], "team2": []}, "series_status": "unknown"}
@@ -503,6 +514,18 @@ HTML = '''
             background: #252540;
             border-radius: 8px;
             font-size: 0.85rem;
+        }
+        .live-stats {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 15px;
+            padding: 10px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            color: #facc15;
         }
         .pick-hero {
             display: inline-block;
@@ -651,62 +674,16 @@ HTML = '''
                     <p><strong>{{ teams[1] }}:</strong> {% for hero in picks.team2 %}<span class="pick-hero">{{ hero }}</span>{% endfor %}</p>
                 </div>
                 {% endif %}
-            </div>
-            
-            {% if series_status != 'series_finished' and (team1_advantage > 0 or team2_advantage > 0) %}
-            <div class="method-info">
-                📊 Метод: Pub Winrate (40%) + Pro Winrate (20%) + Pro Strength (40%)
-            </div>
-            
-            <div class="stats-row">
-                <div class="stat-card">
-                    <div class="stat-title">{{ teams[0] }} - Pub WR</div>
-                    <div class="stat-value stat-pub">{{ team1_stats.avg_pub }}%</div>
+                
+                {% if live_stats.game_time and live_stats.game_time > 0 %}
+                <div class="live-stats">
+                    <p>⏱️ {{ (live_stats.game_time // 60) }}:{{ "%02d"|format(live_stats.game_time %% 60) }}</p>
+                    <p>💀 {{ live_stats.radiant_kills }} - {{ live_stats.dire_kills }}</p>
+                    <p>💰 {% if live_stats.net_worth_adv > 0 %}{{ teams[0] }} +{{ live_stats.net_worth_adv }}{% elif live_stats.net_worth_adv < 0 %}{{ teams[1] }} +{{ live_stats.net_worth_adv|abs }}{% else %}0{% endif %}</p>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-title">{{ teams[0] }} - Pro WR</div>
-                    <div class="stat-value stat-pro">{{ team1_stats.avg_pro }}%</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-title">{{ teams[0] }} - Combo</div>
-                    <div class="stat-value stat-combo">{{ team1_stats.avg_both }}%</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-title">{{ teams[0] }} - Pro Strength</div>
-                    <div class="stat-value stat-combo">{{ team1_stats.pro_strength }}%</div>
-                </div>
-            </div>
-            
-            <div class="stats-row">
-                <div class="stat-card">
-                    <div class="stat-title">{{ teams[1] }} - Pub WR</div>
-                    <div class="stat-value stat-pub">{{ team2_stats.avg_pub }}%</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-title">{{ teams[1] }} - Pro WR</div>
-                    <div class="stat-value stat-pro">{{ team2_stats.avg_pro }}%</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-title">{{ teams[1] }} - Combo</div>
-                    <div class="stat-value stat-combo">{{ team2_stats.avg_both }}%</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-title">{{ teams[1] }} - Pro Strength</div>
-                    <div class="stat-value stat-combo">{{ team2_stats.pro_strength }}%</div>
-                </div>
-            </div>
-            
-            <div class="advantage-label">
-                <span>{{ teams[0] }} - {{ team1_advantage }}%</span>
-                <span>🎯 Перевес пика</span>
-                <span>{{ teams[1] }} - {{ team2_advantage }}%</span>
-            </div>
-            <div class="advantage-bar">
-                <div class="advantage-team1" style="width: {{ team1_advantage }}%">{{ team1_advantage }}%</div>
-                <div class="advantage-team2" style="width: {{ team2_advantage }}%">{{ team2_advantage }}%</div>
-            </div>
-            {% endif %}
-            
+                {% endif %}
+</div>
+             
             <table>
                 <thead>
                     <tr>
@@ -945,6 +922,7 @@ def home():
         odds_paused=teams_data.get('odds_paused', {}),
         available_bookmakers=teams_data.get('available_bookmakers', []),
         is_odds_available=teams_data.get('is_odds_available', False),
+        live_stats=teams_data.get('live_stats', {}),
         bookmakers=BOOKMAKERS,
         team1_advantage=team1_adv,
         team2_advantage=team2_adv,
@@ -989,6 +967,7 @@ def api_odds():
         "team1_score": teams_data.get('team1_score', 0),
         "team2_score": teams_data.get('team2_score', 0),
         "current_map_score": teams_data.get('current_map_score', {'radiant': 0, 'dire': 0}),
+        "live_stats": teams_data.get('live_stats', {}),
         "best_of": teams_data.get('best_of', 3),
         "time": datetime.now().strftime("%H:%M:%S")
     })
