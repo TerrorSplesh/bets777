@@ -722,7 +722,7 @@ HTML = '''
                         {% if series_status == 'series_finished' %}
                         <td class="team1-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
                         <td class="team2-{{ bookmaker }}"><span class="odds-closed">❌ Закрыто</span></td>
-                        {% elif bookmaker in available_bookmakers and not map_odds.get(bookmaker) and not odds.get(bookmaker) %}
+                        {% elif bookmaker in available_bookmakers and not odds.get(bookmaker) and not map_odds.get(bookmaker) %}
                         <td class="team1-{{ bookmaker }}"><span class="odds-paused">⏸️ Пауза</span></td>
                         <td class="team2-{{ bookmaker }}"><span class="odds-paused">⏸️ Пауза</span></td>
                         {% elif bookmaker not in available_bookmakers %}
@@ -732,8 +732,8 @@ HTML = '''
                         <td class="team1-{{ bookmaker }}"><span class="odds-paused">⏸️ Пауза</span></td>
                         <td class="team2-{{ bookmaker }}"><span class="odds-paused">⏸️ Пауза</span></td>
                         {% else %}
-                        <td class="team1-{{ bookmaker }}">{{ map_odds.get(bookmaker, {}).get('team1', odds.get(bookmaker, {}).get('team1', 'N/A')) }}</td>
-                        <td class="team2-{{ bookmaker }}">{{ map_odds.get(bookmaker, {}).get('team2', odds.get(bookmaker, {}).get('team2', 'N/A')) }}</td>
+                        <td class="team1-{{ bookmaker }}">{{ odds.get(bookmaker, {}).get('team1', map_odds.get(bookmaker, {}).get('team1', 'N/A')) }}</td>
+                        <td class="team2-{{ bookmaker }}">{{ odds.get(bookmaker, {}).get('team2', map_odds.get(bookmaker, {}).get('team2', 'N/A')) }}</td>
                         {% endif %}
                     </tr>
                     {% endfor %}
@@ -849,7 +849,7 @@ HTML = '''
                 const el1 = document.querySelector('.team1-' + bm);
                 const el2 = document.querySelector('.team2-' + bm);
                 const isPaused = oddsPaused[bm] || oddsPaused[bm.replace(/-/g, '').replace(/ /g, '')];
-                const hasOdds = odds && odds[bm] && odds[bm].team1 && odds[bm].team2;
+                const hasOdds = odds && odds[bm] && (odds[bm].team1 || odds[bm].team2);
                 const isAvailable = availableBookmakers.includes(bm);
                 
                 if (seriesStatus === 'series_finished') {
@@ -872,12 +872,17 @@ HTML = '''
                         el1.innerHTML = '<span class="odds-paused">⏸️ Пауза</span>';
                         el2.innerHTML = '<span class="odds-paused">⏸️ Пауза</span>';
                     }
-                } else {
+                } else if (hasOdds) {
                     if (el1) {
                         el1.innerHTML = odds[bm].team1;
                     }
                     if (el2) {
                         el2.innerHTML = odds[bm].team2;
+                    }
+                } else {
+                    if (el1) {
+                        el1.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
+                        el2.innerHTML = '<span class="odds-closed">❌ Закрыто</span>';
                     }
                 }
             });
