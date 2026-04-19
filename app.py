@@ -675,11 +675,11 @@ HTML = '''
                 </div>
                 {% endif %}
                 
-                {% if live_stats.game_time and live_stats.game_time > 0 %}
+                {% if live_stats and live_stats.game_time and live_stats.game_time > 0 %}
                 <div class="live-stats">
-                    <p>⏱️ {{ (live_stats.game_time // 60) }}:{{ "%02d"|format(live_stats.game_time %% 60) }}</p>
+                    <p>⏱️ {{ (live_stats.game_time // 60) }}:{{ "%02d"|format(live_stats.game_time % 60) }}</p>
                     <p>💀 {{ live_stats.radiant_kills }} - {{ live_stats.dire_kills }}</p>
-                    <p>💰 {% if live_stats.net_worth_adv > 0 %}{{ teams[0] }} +{{ live_stats.net_worth_adv }}{% elif live_stats.net_worth_adv < 0 %}{{ teams[1] }} +{{ live_stats.net_worth_adv|abs }}{% else %}0{% endif %}</p>
+                    <p>💰 {% if live_stats.net_worth_adv > 0 %}{{ teams[0] }} +{{ live_stats.net_worth_adv }}{% elif live_stats.net_worth_adv < 0 %}{{ teams[1] }} +{{ -live_stats.net_worth_adv }}{% else %}0{% endif %}</p>
                 </div>
                 {% endif %}
 </div>
