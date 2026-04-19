@@ -134,7 +134,7 @@ def parse_hawk(url):
         
         match = re.search(r'data-page="({.*?})"', html)
         if not match:
-            return {"teams": [], "tournament": "Unknown", "picks": {"team1": [], "team2": []}, "series_status": "unknown"}
+            return {"teams": [], "tournament": "Unknown", "picks": {"team1": [], "team2": []}, "series_status": "unknown", "live_stats": {}}
         
         json_str = match.group(1).replace('&quot;', '"')
         page_data = json.loads(json_str)
@@ -350,13 +350,13 @@ def parse_hawk(url):
                             if t1_raw is not None and t2_raw is not None and t1_raw != '' and t2_raw != '':
                                 provider_norm = provider.lower().replace('-', '').replace('_', '').replace(' ', '')
                                 if 'ggbet' in provider_norm:
-                                    odds_data['ggbet'] = {'team1': t2_raw, 'team2': t1_raw}
+                                    odds_data['ggbet'] = {'team1': t1_raw, 'team2': t2_raw}
                                 elif 'parimatch' in provider_norm or 'parimatch' in provider.lower():
-                                    odds_data['parimatch'] = {'team1': t2_raw, 'team2': t1_raw}
+                                    odds_data['parimatch'] = {'team1': t1_raw, 'team2': t2_raw}
                                 elif 'betboom' in provider_norm:
-                                    odds_data['betboom'] = {'team1': t2_raw, 'team2': t1_raw}
+                                    odds_data['betboom'] = {'team1': t1_raw, 'team2': t2_raw}
                                 elif 'spinbetter' in provider_norm or 'spin' in provider_norm:
-                                    odds_data['spinbetter'] = {'team1': t2_raw, 'team2': t1_raw}
+                                    odds_data['spinbetter'] = {'team1': t1_raw, 'team2': t2_raw}
                                 found_odds = True
                                 break
                         
@@ -384,7 +384,7 @@ def parse_hawk(url):
         return {"teams": [], "tournament": "Unknown", "picks": {"team1": [], "team2": []}, "series_status": "unknown"}
     except Exception as e:
         print(f"Parse error: {e}")
-        return {"teams": [], "tournament": "Error", "picks": {"team1": [], "team2": []}, "series_status": "unknown"}
+        return {"teams": [], "tournament": "Error", "picks": {"team1": [], "team2": []}, "series_status": "unknown", "live_stats": {}}
 
 def calculate_team_stats(picks):
     if not picks:
@@ -902,7 +902,7 @@ BOOKMAKERS = ["ggbet", "parimatch", "betboom", "spinbetter", "pinnacle", "fonbet
 @app.route('/')
 def home():
     match_url = request.args.get('url', '')
-    teams_data = parse_hawk(match_url) if match_url else {"teams": [], "tournament": "", "picks": {"team1": [], "team2": []}, "series_status": "unknown", "team1_score": 0, "team2_score": 0, "best_of": 3, "current_odds": None}
+    teams_data = parse_hawk(match_url) if match_url else {"teams": [], "tournament": "", "picks": {"team1": [], "team2": []}, "series_status": "unknown", "team1_score": 0, "team2_score": 0, "best_of": 3, "current_odds": None, "live_stats": {}}
     
     odds = teams_data.get('current_odds', {}) if match_url else {}
     
